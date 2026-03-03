@@ -176,7 +176,7 @@ fun PlaylistDetailScreen(
                     ) {
                         Icon(Icons.Default.Shuffle, null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Queue Shuffle")
+                        Text("Queue Mix")
                     }
                 }
 

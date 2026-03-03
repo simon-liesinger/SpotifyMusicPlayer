@@ -307,10 +307,19 @@ class MusicRepository {
                     continue
                 }
 
-                val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                    ?: fileName.substringBeforeLast(".")
-                val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                    ?: "Unknown"
+                val rawTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                val rawArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                // Parse "Artist - Title" from filename when ID3 tags are missing
+                val nameWithoutExt = fileName.substringBeforeLast(".")
+                val title: String
+                val artist: String
+                if (rawArtist.isNullOrBlank() && nameWithoutExt.contains(" - ")) {
+                    artist = nameWithoutExt.substringBefore(" - ").trim()
+                    title = rawTitle ?: nameWithoutExt.substringAfter(" - ").trim()
+                } else {
+                    title = rawTitle ?: nameWithoutExt
+                    artist = rawArtist ?: "Unknown"
+                }
                 val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 val duration = durationStr?.toLongOrNull() ?: 0L
                 retriever.release()
@@ -357,11 +366,13 @@ class MusicRepository {
     }
 
     private fun scanRecursive(dir: DocumentFile): List<Uri> {
+        val audioExtensions = setOf("mp3", "m4a", "aac", "ogg", "flac", "wav", "opus", "wma")
         val results = mutableListOf<Uri>()
         for (file in dir.listFiles()) {
             if (file.isDirectory) {
                 results.addAll(scanRecursive(file))
-            } else if (file.type?.startsWith("audio/") == true) {
+            } else if (file.type?.startsWith("audio/") == true ||
+                (file.name?.substringAfterLast(".")?.lowercase() in audioExtensions)) {
                 results.add(file.uri)
             }
         }
