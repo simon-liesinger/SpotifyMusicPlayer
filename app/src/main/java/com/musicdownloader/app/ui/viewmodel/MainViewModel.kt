@@ -213,4 +213,8 @@ class MainViewModel : ViewModel() {
     fun deleteSong(song: SongEntity) {
         viewModelScope.launch { repository.deleteSong(song) }
     }
+
+    fun analyzeSong(song: SongEntity) {
+        viewModelScope.launch { repository.analyzeSong(song) }
+    }
 }

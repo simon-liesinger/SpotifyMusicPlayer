@@ -29,7 +29,8 @@ data class SongEntity(
     val duration: Long = 0,
     val artworkUrl: String? = null,
     val orderIndex: Int = 0,
-    val loudnessDb: Float? = null
+    val loudnessDb: Float? = null,
+    val bpm: Float? = null
 )
 
 data class PlaylistWithSongs(

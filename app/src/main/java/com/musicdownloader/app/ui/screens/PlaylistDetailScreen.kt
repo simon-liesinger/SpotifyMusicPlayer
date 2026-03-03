@@ -86,6 +86,7 @@ fun PlaylistDetailScreen(
     val addSongState by mainViewModel.addSongState.collectAsState()
 
     val playlist = playlistWithSongs?.playlist
+    val playlistName = playlist?.name ?: ""
     val songs = playlistWithSongs?.songs ?: emptyList()
 
     // Selection state
@@ -149,7 +150,7 @@ fun PlaylistDetailScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Play controls
+            // Queue controls
             if (songs.isNotEmpty() && !inSelectionMode) {
                 Row(
                     modifier = Modifier
@@ -159,25 +160,23 @@ fun PlaylistDetailScreen(
                 ) {
                     Button(
                         onClick = {
-                            playerViewModel.playSongs(songs)
-                            onNowPlayingClick()
+                            playerViewModel.addPlaylistAsBlock(songs, playlistName)
                         },
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Play All")
+                        Text("Queue Block")
                     }
                     OutlinedButton(
                         onClick = {
-                            playerViewModel.playSongs(songs, shuffle = true)
-                            onNowPlayingClick()
+                            playerViewModel.addPlaylistIndividually(songs, playlistName)
                         },
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.Shuffle, null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Shuffle")
+                        Text("Queue Shuffle")
                     }
                 }
 
@@ -222,11 +221,14 @@ fun PlaylistDetailScreen(
                 ) {
                     itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
                         val isSelected = song.id in selectedIds
+                        val needsAnalysis = song.loudnessDb == null
                         SongListItem(
                             song = song,
                             index = index + 1,
                             isSelected = isSelected,
                             inSelectionMode = inSelectionMode,
+                            needsAnalysis = needsAnalysis,
+                            onAnalyze = { mainViewModel.analyzeSong(song) },
                             onClick = {
                                 if (inSelectionMode) {
                                     selectedIds = if (isSelected) {
@@ -235,8 +237,7 @@ fun PlaylistDetailScreen(
                                         selectedIds + song.id
                                     }
                                 } else {
-                                    playerViewModel.playSongs(songs, startIndex = index)
-                                    onNowPlayingClick()
+                                    playerViewModel.addToQueue(song, playlistName)
                                 }
                             },
                             onLongClick = {
@@ -531,6 +532,8 @@ private fun SongListItem(
     index: Int,
     isSelected: Boolean,
     inSelectionMode: Boolean,
+    needsAnalysis: Boolean = false,
+    onAnalyze: () -> Unit = {},
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -579,6 +582,19 @@ private fun SongListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        if (needsAnalysis && !inSelectionMode) {
+            IconButton(
+                onClick = onAnalyze,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.Error,
+                    "Needs analysis — tap to analyze",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                )
+            }
         }
     }
 }

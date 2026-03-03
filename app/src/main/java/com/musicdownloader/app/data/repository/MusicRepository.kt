@@ -13,8 +13,11 @@ import com.musicdownloader.app.data.api.TrackInfo
 import com.musicdownloader.app.data.db.PlaylistEntity
 import com.musicdownloader.app.data.db.PlaylistWithSongs
 import com.musicdownloader.app.data.db.SongEntity
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -29,6 +32,9 @@ class MusicRepository {
     val spotifyScraper = SpotifyScraper()
     private val soundCloudApi = SoundCloudApi()
     private val bandcampApi = BandcampApi()
+
+    // Background scope for non-blocking analysis tasks
+    private val analysisScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     fun getAllPlaylists(): Flow<List<PlaylistEntity>> = playlistDao.getAllPlaylists()
 
@@ -152,7 +158,7 @@ class MusicRepository {
                     orderIndex = startIndex
                 )
             )
-            analyzeLoudnessAndUpdate(scSongId, outputFile)
+            scheduleAnalysis(scSongId, outputFile)
 
             onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.DONE, TrackSource.SOUNDCLOUD))
             return
@@ -184,7 +190,7 @@ class MusicRepository {
                     orderIndex = startIndex
                 )
             )
-            analyzeLoudnessAndUpdate(bcSongId, outputFile)
+            scheduleAnalysis(bcSongId, outputFile)
 
             onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.DONE, TrackSource.BANDCAMP))
             return
@@ -325,20 +331,18 @@ class MusicRepository {
                     } ?: throw Exception("Cannot read file")
                 }
 
-                // Analyze loudness
-                val loudness = AudioAnalyzer.measureLoudness(outputFile)
-
-                songDao.insert(
+                val songId = songDao.insert(
                     SongEntity(
                         playlistId = playlistId,
                         title = title,
                         artist = artist,
                         filePath = outputFile.absolutePath,
                         duration = duration,
-                        orderIndex = startIndex + index,
-                        loudnessDb = loudness
+                        orderIndex = startIndex + index
                     )
                 )
+                // Analyze in background — don't block file import
+                scheduleAnalysis(songId, outputFile)
 
                 onProgress(DownloadProgress(trackNum, fileUris.size, title, DownloadStatus.DONE))
             } catch (e: Exception) {
@@ -370,12 +374,27 @@ class MusicRepository {
     }
 
     /**
-     * Analyze loudness for a song and update the database.
+     * Schedule loudness + BPM analysis in background (fire-and-forget).
+     * Does not block the download flow.
      */
-    private suspend fun analyzeLoudnessAndUpdate(songId: Long, file: File) {
-        val loudness = AudioAnalyzer.measureLoudness(file)
-        if (loudness != null) {
-            songDao.updateLoudness(songId, loudness)
+    private fun scheduleAnalysis(songId: Long, file: File) {
+        analysisScope.launch {
+            try {
+                val loudness = AudioAnalyzer.measureLoudness(file)
+                if (loudness != null) songDao.updateLoudness(songId, loudness)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Analyze a single song's loudness. Call from UI to fill missing data.
+     */
+    suspend fun analyzeSong(song: SongEntity) {
+        val file = File(song.filePath)
+        if (!file.exists()) return
+        if (song.loudnessDb == null) {
+            val loudness = AudioAnalyzer.measureLoudness(file)
+            if (loudness != null) songDao.updateLoudness(song.id, loudness)
         }
     }
 
@@ -431,7 +450,7 @@ class MusicRepository {
                             orderIndex = startIndex + index
                         )
                     )
-                    analyzeLoudnessAndUpdate(songId, outputFile)
+                    scheduleAnalysis(songId, outputFile)
 
                     scCount++
                     onProgress(
@@ -472,7 +491,7 @@ class MusicRepository {
                             orderIndex = startIndex + index
                         )
                     )
-                    analyzeLoudnessAndUpdate(bcSongId, outputFile)
+                    scheduleAnalysis(bcSongId, outputFile)
 
                     bcCount++
                     onProgress(

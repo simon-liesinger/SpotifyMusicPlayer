@@ -54,4 +54,7 @@ interface SongDao {
 
     @Query("UPDATE songs SET loudnessDb = :loudnessDb WHERE id = :id")
     suspend fun updateLoudness(id: Long, loudnessDb: Float)
+
+    @Query("UPDATE songs SET bpm = :bpm WHERE id = :id")
+    suspend fun updateBpm(id: Long, bpm: Float)
 }
