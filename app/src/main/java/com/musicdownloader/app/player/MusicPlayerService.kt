@@ -4,11 +4,9 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Bundle
-import android.os.PowerManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
-import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
@@ -70,18 +68,6 @@ class MusicPlayerService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true) // Auto-pause when headphones disconnected
             .setWakeMode(C.WAKE_MODE_LOCAL) // Keep CPU awake during playback
-            .build()
-
-        // Enable audio offload — delegates decoding to hardware DSP,
-        // dramatically reduces CPU usage for background playback
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setAudioOffloadPreferences(
-                TrackSelectionParameters.AudioOffloadPreferences.Builder()
-                    .setAudioOffloadMode(
-                        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
-                    )
-                    .build()
-            )
             .build()
 
         // Set up LoudnessEnhancer for normalization
