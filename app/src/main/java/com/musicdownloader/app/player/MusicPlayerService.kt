@@ -55,6 +55,7 @@ class MusicPlayerService : MediaSessionService() {
                 true // handleAudioFocus - auto-manages focus for calls, nav, etc.
             )
             .setHandleAudioBecomingNoisy(true) // Auto-pause when headphones disconnected
+            .setWakeMode(C.WAKE_MODE_LOCAL) // Keep CPU awake during playback
             .build()
 
         // Set up LoudnessEnhancer for normalization
