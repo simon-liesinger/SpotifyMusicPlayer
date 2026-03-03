@@ -8,6 +8,8 @@ import android.os.PowerManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -47,7 +49,18 @@ class MusicPlayerService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
+        // Large buffer to prevent underruns when CPU is throttled in background
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                60_000,   // min buffer: 60s
+                120_000,  // max buffer: 120s
+                1_000,    // playback start buffer: 1s
+                5_000     // rebuffer threshold: 5s
+            )
+            .build()
+
         val player = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -57,6 +70,18 @@ class MusicPlayerService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true) // Auto-pause when headphones disconnected
             .setWakeMode(C.WAKE_MODE_LOCAL) // Keep CPU awake during playback
+            .build()
+
+        // Enable audio offload — delegates decoding to hardware DSP,
+        // dramatically reduces CPU usage for background playback
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setAudioOffloadPreferences(
+                TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                    .setAudioOffloadMode(
+                        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+                    )
+                    .build()
+            )
             .build()
 
         // Set up LoudnessEnhancer for normalization
