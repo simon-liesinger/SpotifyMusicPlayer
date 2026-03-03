@@ -9,7 +9,6 @@ DEFAULT_JVM_OPTS='-Xmx64m -Xms64m'
 
 APP_NAME="Gradle"
 APP_BASE_NAME=$(basename "$0")
-CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
 
 # Determine the Java command to use to start the JVM.
 if [ -n "$JAVA_HOME" ] ; then
@@ -59,6 +58,8 @@ SAVED="$(pwd)"
 cd "$(dirname "$PRG")/" >/dev/null
 APP_HOME="$(pwd -P)"
 cd "$SAVED" >/dev/null
+
+CLASSPATH="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
 
 exec "$JAVACMD" \
     $DEFAULT_JVM_OPTS \
