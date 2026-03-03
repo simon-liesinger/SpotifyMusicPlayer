@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Bundle
+import android.os.PowerManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -149,12 +150,18 @@ class MusicPlayerService : MediaSessionService() {
         return mediaSession
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY // Restart service if killed by system
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
-        // Stop service if nothing is playing
+        // Only stop service if nothing is playing
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
+        // Otherwise keep playing in background
     }
 
     override fun onDestroy() {

@@ -45,7 +45,7 @@ data class PlayerState(
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
     val isActive: Boolean = false,
-    val normalizeEnabled: Boolean = false,
+    val normalizeEnabled: Boolean = true,
     val bpmSettings: BpmSettings = BpmSettings(),
     val queueSize: Int = 0,
     val queueIndex: Int = -1
@@ -86,6 +86,14 @@ class PlayerViewModel : ViewModel() {
                 mediaController = controllerFuture.get()
                 setupPlayerListener()
                 startPositionUpdates()
+                // Sync normalization state with service on connect
+                if (_playerState.value.normalizeEnabled) {
+                    val args = Bundle().apply { putBoolean(MusicPlayerService.KEY_ENABLED, true) }
+                    mediaController?.sendCustomCommand(
+                        SessionCommand(MusicPlayerService.CMD_SET_NORMALIZE, Bundle.EMPTY),
+                        args
+                    )
+                }
             } catch (_: Exception) {}
         }, MoreExecutors.directExecutor())
     }
