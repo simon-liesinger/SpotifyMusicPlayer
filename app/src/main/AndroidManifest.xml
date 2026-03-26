@@ -27,6 +27,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SpotifyBrowserActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SpotifyMusicPlayer" />
+
         <service
             android:name=".player.MusicPlayerService"
             android:exported="true"

@@ -194,6 +194,18 @@ class MainViewModel : ViewModel() {
         repository.spotifyScraper.spotifyApi.clearCredentials()
     }
 
+    fun mergeWebViewTracks(chunks: List<String>) {
+        val existing = _importState.value.tracks ?: return
+        val webViewTracks = repository.spotifyScraper.parseApiChunks(chunks)
+        val existingKeys = existing.map { "${it.name}||${it.artist}" }.toSet()
+        val newTracks = webViewTracks.filter { "${it.name}||${it.artist}" !in existingKeys }
+        if (newTracks.isNotEmpty()) {
+            _importState.value = _importState.value.copy(
+                tracks = existing + newTracks
+            )
+        }
+    }
+
     fun resetImportState() {
         _importState.value = ImportState()
     }

@@ -369,6 +369,46 @@ class SpotifyScraper(
         return (hours * 3600 + minutes * 60 + seconds) * 1000
     }
 
+    /**
+     * Parse intercepted Spotify API JSON chunks from the WebView browser.
+     * Returns a deduplicated list of tracks extracted across all chunks.
+     */
+    fun parseApiChunks(chunks: List<String>): List<TrackInfo> {
+        val tracks = mutableListOf<TrackInfo>()
+        val seen = mutableSetOf<String>()
+
+        for (chunk in chunks) {
+            try {
+                val root = gson.fromJson(chunk, JsonObject::class.java) ?: continue
+                extractTracksFromApiChunk(root, tracks, seen)
+            } catch (_: Exception) {}
+        }
+
+        return tracks
+    }
+
+    private fun extractTracksFromApiChunk(
+        root: JsonObject,
+        tracks: MutableList<TrackInfo>,
+        seen: MutableSet<String>
+    ) {
+        // Spotify partner API: data.playlistV2.content.items[]
+        val items = root.getAsJsonObject("data")
+            ?.getAsJsonObject("playlistV2")
+            ?.getAsJsonObject("content")
+            ?.getAsJsonArray("items") ?: return
+
+        for (item in items) {
+            try {
+                val trackInfo = extractTrackInfo(item) ?: continue
+                val key = "${trackInfo.name}||${trackInfo.artist}"
+                if (seen.add(key)) {
+                    tracks.add(trackInfo)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     private fun extractPlaylistId(url: String): String? {
         // Match playlist ID from various URL formats
         val regex = Regex("playlist/([a-zA-Z0-9]+)")
