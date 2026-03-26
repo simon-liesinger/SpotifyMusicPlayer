@@ -1,9 +1,5 @@
 package com.musicdownloader.app.ui.screens
 
-import android.app.Activity
-import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,10 +45,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.musicdownloader.app.SpotifyBrowserActivity
 import com.musicdownloader.app.data.repository.MusicRepository
 import com.musicdownloader.app.ui.viewmodel.MainViewModel
 
@@ -65,22 +59,18 @@ fun ImportScreen(
 ) {
     val importState by viewModel.importState.collectAsState()
     val existingPlaylists by viewModel.playlists.collectAsState()
-    val context = LocalContext.current
-
     var playlistUrl by remember { mutableStateOf("") }
     var showPlaylistPicker by remember { mutableStateOf(false) }
     var showApiSetup by remember { mutableStateOf(false) }
     var apiConfigured by remember { mutableStateOf(viewModel.isSpotifyApiConfigured()) }
+    var showBrowser by remember { mutableStateOf(false) }
 
-    val browserLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val chunks = result.data
-                ?.getStringArrayListExtra(SpotifyBrowserActivity.RESULT_TRACKS_JSON)
-                ?: return@rememberLauncherForActivityResult
+    if (showBrowser) {
+        SpotifyBrowserOverlay(url = playlistUrl.trim()) { chunks ->
+            showBrowser = false
             viewModel.mergeWebViewTracks(chunks)
         }
+        return
     }
 
     Scaffold(
@@ -260,11 +250,7 @@ fun ImportScreen(
                     // Offer to load more tracks if count is a multiple of 30 (likely truncated)
                     if (tracks.size % 30 == 0) {
                         OutlinedButton(
-                            onClick = {
-                                val intent = Intent(context, SpotifyBrowserActivity::class.java)
-                                    .putExtra(SpotifyBrowserActivity.EXTRA_URL, playlistUrl.trim())
-                                browserLauncher.launch(intent)
-                            },
+                            onClick = { showBrowser = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(18.dp))
