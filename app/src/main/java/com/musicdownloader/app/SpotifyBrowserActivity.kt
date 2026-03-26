@@ -44,42 +44,75 @@ class SpotifyBrowserActivity : ComponentActivity() {
         const val EXTRA_URL = "url"
         const val RESULT_TRACKS_JSON = "tracks_json"
 
-        // JS injected after page load:
-        // 1. Intercepts fetch() calls that carry paginated track data
-        // 2. Auto-scrolls so those calls are triggered
+        // JS injected after page load (and re-injected after delays to handle SPA init):
+        // 1. Wraps fetch() and XHR to capture all Spotify API responses
+        // 2. Auto-scrolls to trigger lazy-loaded pagination
         private val INJECT_SCRIPT = """
             (function() {
                 const bridge = window.SpotifyBridge;
-                if (!bridge || window._injected) return;
-                window._injected = true;
+                if (!bridge) return;
 
-                // Intercept fetch to capture Spotify's pagination API responses
-                const _fetch = window.fetch;
-                window.fetch = function() {
-                    const result = _fetch.apply(this, arguments);
-                    try {
-                        const url = (typeof arguments[0] === 'string')
-                            ? arguments[0]
-                            : (arguments[0]?.url || '');
-                        if (url.includes('fetchPlaylist') || url.includes('getPlaylist')) {
-                            result.then(function(r) {
-                                try { r.clone().text().then(function(t) { bridge.onApiChunk(t); }); }
-                                catch(e) {}
+                function isSpotifyApi(url) {
+                    return url && (
+                        url.includes('api-partner.spotify.com') ||
+                        url.includes('spclient.wg.spotify.com') ||
+                        url.includes('api.spotify.com')
+                    );
+                }
+
+                // Wrap fetch (only once)
+                if (!window._fetchWrapped) {
+                    window._fetchWrapped = true;
+                    const _fetch = window.fetch;
+                    window.fetch = function() {
+                        const result = _fetch.apply(this, arguments);
+                        try {
+                            const url = (typeof arguments[0] === 'string')
+                                ? arguments[0]
+                                : (arguments[0]?.url || '');
+                            if (isSpotifyApi(url)) {
+                                result.then(function(r) {
+                                    try { r.clone().text().then(function(t) { bridge.onApiChunk(t); }); }
+                                    catch(e) {}
+                                });
+                            }
+                        } catch(e) {}
+                        return result;
+                    };
+                }
+
+                // Wrap XHR (only once) — Spotify's desktop player may use XHR
+                if (!window._xhrWrapped) {
+                    window._xhrWrapped = true;
+                    const _open = XMLHttpRequest.prototype.open;
+                    const _send = XMLHttpRequest.prototype.send;
+                    XMLHttpRequest.prototype.open = function(method, url) {
+                        this._spotifyUrl = url;
+                        return _open.apply(this, arguments);
+                    };
+                    XMLHttpRequest.prototype.send = function() {
+                        if (isSpotifyApi(this._spotifyUrl)) {
+                            const xhr = this;
+                            xhr.addEventListener('load', function() {
+                                try { bridge.onApiChunk(xhr.responseText); } catch(e) {}
                             });
                         }
-                    } catch(e) {}
-                    return result;
-                };
-
-                // Auto-scroll to load paginated tracks
-                function scrollLoop() {
-                    const prev = window.scrollY;
-                    window.scrollBy(0, 1200);
-                    setTimeout(function() {
-                        if (window.scrollY > prev) scrollLoop();
-                    }, 600);
+                        return _send.apply(this, arguments);
+                    };
                 }
-                setTimeout(scrollLoop, 1500);
+
+                // Auto-scroll (only once)
+                if (!window._scrollStarted) {
+                    window._scrollStarted = true;
+                    function scrollLoop() {
+                        const prev = window.scrollY;
+                        window.scrollBy(0, 1200);
+                        setTimeout(function() {
+                            if (window.scrollY > prev) scrollLoop();
+                        }, 600);
+                    }
+                    setTimeout(scrollLoop, 2000);
+                }
             })();
         """.trimIndent()
     }

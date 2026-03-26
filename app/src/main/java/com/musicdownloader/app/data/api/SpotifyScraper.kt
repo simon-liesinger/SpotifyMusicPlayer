@@ -392,20 +392,39 @@ class SpotifyScraper(
         tracks: MutableList<TrackInfo>,
         seen: MutableSet<String>
     ) {
-        // Spotify partner API: data.playlistV2.content.items[]
-        val items = root.getAsJsonObject("data")
-            ?.getAsJsonObject("playlistV2")
-            ?.getAsJsonObject("content")
-            ?.getAsJsonArray("items") ?: return
+        val data = root.getAsJsonObject("data") ?: return
+        // Try multiple known Spotify GraphQL response paths
+        val candidates = listOfNotNull(
+            // playlist pagination: data.playlistV2.content.items[]
+            data.getAsJsonObject("playlistV2")
+                ?.getAsJsonObject("content")
+                ?.getAsJsonArray("items"),
+            // liked songs: data.me.library.tracks.items[]
+            data.getAsJsonObject("me")
+                ?.getAsJsonObject("library")
+                ?.getAsJsonObject("tracks")
+                ?.getAsJsonArray("items"),
+            // album tracks: data.albumUnion.tracks.items[]
+            data.getAsJsonObject("albumUnion")
+                ?.getAsJsonObject("tracks")
+                ?.getAsJsonArray("items"),
+            // artist top tracks: data.artistUnion.discography.topTracks.items[]
+            data.getAsJsonObject("artistUnion")
+                ?.getAsJsonObject("discography")
+                ?.getAsJsonObject("topTracks")
+                ?.getAsJsonArray("items"),
+        )
 
-        for (item in items) {
-            try {
-                val trackInfo = extractTrackInfo(item) ?: continue
-                val key = "${trackInfo.name}||${trackInfo.artist}"
-                if (seen.add(key)) {
-                    tracks.add(trackInfo)
-                }
-            } catch (_: Exception) {}
+        for (items in candidates) {
+            for (item in items) {
+                try {
+                    val trackInfo = extractTrackInfo(item) ?: continue
+                    val key = "${trackInfo.name}||${trackInfo.artist}"
+                    if (seen.add(key)) {
+                        tracks.add(trackInfo)
+                    }
+                } catch (_: Exception) {}
+            }
         }
     }
 
