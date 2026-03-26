@@ -3,15 +3,18 @@ package com.musicdownloader.app
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,9 +24,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -81,16 +86,18 @@ class SpotifyBrowserActivity : ComponentActivity() {
 
     private val chunks = mutableListOf<String>()
     private var extraTrackCount = 0
+    private var webViewRef: WebView? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val url = intent.getStringExtra(EXTRA_URL) ?: run { finish(); return }
+        val playlistUrl = intent.getStringExtra(EXTRA_URL) ?: run { finish(); return }
 
         setContent {
             SpotifyMusicPlayerTheme {
                 var extraCount by remember { mutableIntStateOf(0) }
+                var pageTitle by remember { mutableStateOf("Loading…") }
 
                 Column(Modifier.fillMaxSize()) {
                     // Instruction banner
@@ -102,17 +109,30 @@ class SpotifyBrowserActivity : ComponentActivity() {
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
                     ) {
                         Column(Modifier.padding(12.dp)) {
-                            Text(
-                                "Scroll to the bottom to load all tracks",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                "The page will auto-scroll. When done, tap Import.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        pageTitle,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        "Log in if prompted, then scroll to load all tracks.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { webViewRef?.loadUrl(playlistUrl) },
+                                    modifier = Modifier.padding(start = 8.dp)
+                                ) { Text("Reload") }
+                            }
                             if (extraCount > 0) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
@@ -131,12 +151,25 @@ class SpotifyBrowserActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxSize(),
                             factory = { ctx ->
                                 WebView(ctx).apply {
+                                    webViewRef = this
+
+                                    // Use a desktop Chrome UA — Spotify's web player renders
+                                    // properly with desktop mode; mobile UAs often fail in WebView
                                     settings.javaScriptEnabled = true
                                     settings.domStorageEnabled = true
+                                    settings.databaseEnabled = true
+                                    settings.useWideViewPort = true
+                                    settings.loadWithOverviewMode = true
+                                    @Suppress("DEPRECATION")
+                                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                     settings.userAgentString =
-                                        "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
+                                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                                         "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                        "Chrome/120.0.0.0 Mobile Safari/537.36"
+                                        "Chrome/124.0.0.0 Safari/537.36"
+
+                                    // Allow third-party cookies (required for Spotify login)
+                                    CookieManager.getInstance().setAcceptCookie(true)
+                                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
                                     addJavascriptInterface(object : Any() {
                                         @JavascriptInterface
@@ -150,20 +183,19 @@ class SpotifyBrowserActivity : ComponentActivity() {
                                     }, "SpotifyBridge")
 
                                     webViewClient = object : WebViewClient() {
-                                        override fun shouldOverrideUrlLoading(
-                                            view: WebView, request: WebResourceRequest
-                                        ): Boolean {
-                                            // Keep navigation within spotify.com
-                                            val host = request.url.host ?: ""
-                                            return !host.endsWith("spotify.com")
-                                        }
-
+                                        // Allow all navigation — Spotify OAuth may go through
+                                        // Google/Facebook, and "Liked Songs" etc. are on
+                                        // different Spotify paths we shouldn't block
                                         override fun onPageFinished(view: WebView, url: String) {
                                             view.evaluateJavascript(INJECT_SCRIPT, null)
                                         }
                                     }
-                                    webChromeClient = WebChromeClient()
-                                    loadUrl(url)
+                                    webChromeClient = object : WebChromeClient() {
+                                        override fun onReceivedTitle(view: WebView, title: String) {
+                                            runOnUiThread { pageTitle = title }
+                                        }
+                                    }
+                                    loadUrl(playlistUrl)
                                 }
                             }
                         )
