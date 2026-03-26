@@ -462,7 +462,7 @@ class MusicRepository {
             try {
                 // ── SoundCloud ──────────────────────────────────────────────
                 onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.SEARCHING))
-                val scTrack = soundCloudApi.searchTrack(track.searchQuery)
+                val scTrack = soundCloudApi.searchTrack(track.searchQuery, track.artist)
                 if (scTrack != null) {
                     onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DOWNLOADING, TrackSource.SOUNDCLOUD))
                     val outputFile = File(musicDir, "${safeBase(track.name, track.artist)}.mp3")
@@ -484,7 +484,7 @@ class MusicRepository {
                 // ── Bandcamp ────────────────────────────────────────────────
                 if (!saved) {
                     onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.SEARCHING_BANDCAMP))
-                    val bcTrack = withContext(Dispatchers.IO) { bandcampApi.searchTrack(track.searchQuery) }
+                    val bcTrack = withContext(Dispatchers.IO) { bandcampApi.searchTrack(track.searchQuery, track.artist) }
                     if (bcTrack != null) {
                         onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DOWNLOADING, TrackSource.BANDCAMP))
                         val outputFile = File(musicDir, "${safeBase(track.name, track.artist)}.mp3")
@@ -507,7 +507,7 @@ class MusicRepository {
                 // ── YouTube (optional fallback) ─────────────────────────────
                 if (!saved && allowYoutube) {
                     onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.SEARCHING_YOUTUBE))
-                    val ytTrack = withContext(Dispatchers.IO) { youTubeApi.searchAndGetTrack(track.searchQuery) }
+                    val ytTrack = withContext(Dispatchers.IO) { youTubeApi.searchAndGetTrack(track.searchQuery, track.artist) }
                     if (ytTrack != null) {
                         onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DOWNLOADING, TrackSource.YOUTUBE))
                         val outputFile = File(musicDir, "${safeBase(track.name, track.artist)}.m4a")

@@ -146,13 +146,14 @@ class SoundCloudApi(
 
     /**
      * Search SoundCloud for a track matching the query.
+     * If artistHint is provided, prefer results whose username matches the expected artist.
      */
-    suspend fun searchTrack(query: String): SoundCloudTrack? {
+    suspend fun searchTrack(query: String, artistHint: String? = null): SoundCloudTrack? {
         return withContext(Dispatchers.IO) {
             val id = resolveClientId()
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
             val url = "https://api-v2.soundcloud.com/search/tracks" +
-                "?q=$encodedQuery&client_id=$id&limit=5&offset=0"
+                "?q=$encodedQuery&client_id=$id&limit=10&offset=0"
 
             val request = Request.Builder()
                 .url(url)
@@ -164,8 +165,25 @@ class SoundCloudApi(
 
             val body = response.body?.string() ?: return@withContext null
             val result = gson.fromJson(body, SoundCloudSearchResult::class.java)
-            result.collection.firstOrNull()
+            val tracks = result.collection
+
+            if (artistHint == null || tracks.isEmpty()) {
+                return@withContext tracks.firstOrNull()
+            }
+
+            // Prefer a result whose uploader username matches the expected artist
+            tracks.firstOrNull { artistMatches(it.user.username, artistHint) }
+                ?: tracks.firstOrNull()
         }
+    }
+
+    private fun artistMatches(username: String, hint: String): Boolean {
+        fun normalize(s: String) = s.lowercase().replace(Regex("[^a-z0-9 ]"), "").trim()
+        val u = normalize(username)
+        val h = normalize(hint.split(",").first()) // use primary artist only
+        if (u.isEmpty() || h.isEmpty()) return false
+        return u.contains(h) || h.contains(u) ||
+            h.split(" ").filter { it.length > 2 }.any { w -> u.split(" ").any { it.startsWith(w) } }
     }
 
     /**

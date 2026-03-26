@@ -188,94 +188,120 @@ class PlayerViewModel : ViewModel() {
     }
 
     /**
-     * Add a single song to the queue at a random position after current.
+     * Tap a song — insert at the front of the queue and play it immediately.
      */
-    fun addToQueue(song: SongEntity, playlistName: String = "") {
+    fun tapSong(song: SongEntity, playlistName: String = "") {
         val controller = mediaController ?: return
-        val item = QueueItem(song, playlistName)
 
         if (controller.mediaItemCount == 0) {
-            // Queue empty — play immediately
             playNow(song, playlistName)
             return
         }
 
-        val afterCurrent = controller.currentMediaItemIndex + 1
-        val insertAt = afterCurrent + (0..(controller.mediaItemCount - afterCurrent)).random()
-        controller.addMediaItem(insertAt, songToMediaItem(song))
-
+        controller.addMediaItem(0, songToMediaItem(song))
         val items = _queueItems.value.toMutableList()
-        items.add(insertAt, item)
+        items.add(0, QueueItem(song, playlistName))
         _queueItems.value = items
         currentSongs = items.map { it.song }
+
+        controller.seekTo(0, 0)
+        if (!controller.isPlaying) controller.play()
         updateState()
+
+        if (_playerState.value.normalizeEnabled) {
+            viewModelScope.launch { delay(100); sendCurrentTrackLoudness() }
+        }
     }
 
-    /**
-     * Add all songs from a playlist as a shuffled block at a random position.
-     */
-    fun addPlaylistAsBlock(songs: List<SongEntity>, playlistName: String) {
+    /** Queue Block: append playlist in original order to the end of the queue. */
+    fun queueBlock(songs: List<SongEntity>, playlistName: String) {
+        if (songs.isEmpty()) return
         val controller = mediaController ?: return
-        val shuffled = songs.shuffled()
-        val items = shuffled.map { QueueItem(it, playlistName) }
-        val mediaItems = shuffled.map { songToMediaItem(it) }
+        val items = songs.map { QueueItem(it, playlistName) }
+        val mediaItems = songs.map { songToMediaItem(it) }
 
         if (controller.mediaItemCount == 0) {
-            currentSongs = shuffled
-            _queueItems.value = items
-
-            controller.setMediaItems(mediaItems, 0, 0)
-            controller.shuffleModeEnabled = false
-            controller.repeatMode = if (_playerState.value.repeatEnabled) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
-            controller.prepare()
-            controller.play()
-
-            if (_playerState.value.normalizeEnabled) {
-                viewModelScope.launch {
-                    delay(100)
-                    sendCurrentTrackLoudness()
-                }
-            }
+            startFresh(songs, items, mediaItems, controller)
         } else {
-            val afterCurrent = controller.currentMediaItemIndex + 1
-            val insertAt = afterCurrent + (0..(controller.mediaItemCount - afterCurrent)).random()
-
-            for (i in mediaItems.indices) {
-                controller.addMediaItem(insertAt + i, mediaItems[i])
-            }
-
-            val currentItems = _queueItems.value.toMutableList()
-            currentItems.addAll(insertAt, items)
-            _queueItems.value = currentItems
-            currentSongs = currentItems.map { it.song }
+            val end = controller.mediaItemCount
+            mediaItems.forEachIndexed { i, mi -> controller.addMediaItem(end + i, mi) }
+            val current = _queueItems.value.toMutableList()
+            current.addAll(items)
+            _queueItems.value = current
+            currentSongs = current.map { it.song }
             updateState()
         }
     }
 
-    /**
-     * Add songs from a playlist individually at random positions.
-     */
-    fun addPlaylistIndividually(songs: List<SongEntity>, playlistName: String) {
+    /** Queue Shuffle: append playlist in random order to the end of the queue. */
+    fun queueShuffle(songs: List<SongEntity>, playlistName: String) {
+        queueBlock(songs.shuffled(), playlistName)
+    }
+
+    /** Mix Block: insert playlist in original order as a block at a random position. */
+    fun mixBlock(songs: List<SongEntity>, playlistName: String) {
+        if (songs.isEmpty()) return
+        val controller = mediaController ?: return
+        val items = songs.map { QueueItem(it, playlistName) }
+        val mediaItems = songs.map { songToMediaItem(it) }
+
+        if (controller.mediaItemCount == 0) {
+            startFresh(songs, items, mediaItems, controller)
+        } else {
+            val insertAt = randomInsertPosition(controller)
+            mediaItems.forEachIndexed { i, mi -> controller.addMediaItem(insertAt + i, mi) }
+            val current = _queueItems.value.toMutableList()
+            current.addAll(insertAt, items)
+            _queueItems.value = current
+            currentSongs = current.map { it.song }
+            updateState()
+        }
+    }
+
+    /** Mix Shuffle: insert each song individually at a random position in the queue. */
+    fun mixShuffle(songs: List<SongEntity>, playlistName: String) {
         if (songs.isEmpty()) return
         val controller = mediaController ?: return
 
         if (controller.mediaItemCount == 0) {
-            // Shuffle all and play
-            addPlaylistAsBlock(songs, playlistName)
+            val shuffled = songs.shuffled()
+            val items = shuffled.map { QueueItem(it, playlistName) }
+            startFresh(shuffled, items, shuffled.map { songToMediaItem(it) }, controller)
             return
         }
 
         for (song in songs) {
-            val afterCurrent = controller.currentMediaItemIndex + 1
-            val insertAt = afterCurrent + (0..(controller.mediaItemCount - afterCurrent)).random()
+            val insertAt = randomInsertPosition(controller)
             controller.addMediaItem(insertAt, songToMediaItem(song))
-
-            val currentItems = _queueItems.value.toMutableList()
-            currentItems.add(insertAt, QueueItem(song, playlistName))
-            _queueItems.value = currentItems
+            val current = _queueItems.value.toMutableList()
+            current.add(insertAt, QueueItem(song, playlistName))
+            _queueItems.value = current
         }
         currentSongs = _queueItems.value.map { it.song }
         updateState()
+    }
+
+    private fun randomInsertPosition(controller: MediaController): Int {
+        val after = controller.currentMediaItemIndex + 1
+        return after + (0..(controller.mediaItemCount - after)).random()
+    }
+
+    private fun startFresh(
+        songs: List<SongEntity>,
+        items: List<QueueItem>,
+        mediaItems: List<MediaItem>,
+        controller: MediaController
+    ) {
+        currentSongs = songs
+        _queueItems.value = items
+        controller.setMediaItems(mediaItems, 0, 0)
+        controller.shuffleModeEnabled = false
+        controller.repeatMode = Player.REPEAT_MODE_ALL
+        controller.prepare()
+        controller.play()
+        if (_playerState.value.normalizeEnabled) {
+            viewModelScope.launch { delay(100); sendCurrentTrackLoudness() }
+        }
     }
 
     fun removeFromQueue(index: Int) {

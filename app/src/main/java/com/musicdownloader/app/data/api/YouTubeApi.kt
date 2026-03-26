@@ -33,22 +33,42 @@ class YouTubeApi(
     private val ytMusicAgent =
         "com.google.android.apps.youtube.music/5.28.1 (Linux; U; Android 11) gzip"
 
-    /** Search YouTube and return a track with a direct audio stream URL, or null. */
-    suspend fun searchAndGetTrack(query: String): YouTubeTrack? = withContext(Dispatchers.IO) {
-        val videoId = searchVideoId(query) ?: return@withContext null
-        getAudioTrack(videoId)
-    }
+    /**
+     * Search YouTube and return a track with a direct audio stream URL, or null.
+     * If artistHint is provided, prefer results whose title contains the expected artist name.
+     */
+    suspend fun searchAndGetTrack(query: String, artistHint: String? = null): YouTubeTrack? =
+        withContext(Dispatchers.IO) {
+            val videoIds = searchVideoIds(query)
+            if (videoIds.isEmpty()) return@withContext null
 
-    private fun searchVideoId(query: String): String? {
+            if (artistHint == null) return@withContext getAudioTrack(videoIds.first())
+
+            val primaryArtist = artistHint.split(",").first().trim().lowercase()
+            // Try up to 3 results, prefer one whose title contains the expected artist
+            for (videoId in videoIds.take(3)) {
+                val track = getAudioTrack(videoId) ?: continue
+                if (track.title.lowercase().contains(primaryArtist)) return@withContext track
+            }
+            // Fall back to first result if no title match
+            null
+        }
+
+    private fun searchVideoIds(query: String): List<String> {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val request = Request.Builder()
             .url("https://www.youtube.com/results?search_query=$encoded&sp=EgIQAQ%3D%3D")
             .header("User-Agent", browserAgent)
             .header("Accept-Language", "en-US,en;q=0.9")
             .build()
-        val html = client.newCall(request).execute().body?.string() ?: return null
-        // Extract first video ID (11 chars) from the JSON embedded in the page
-        return Regex(""""videoId":"([a-zA-Z0-9_-]{11})"""").find(html)?.groupValues?.get(1)
+        val html = client.newCall(request).execute().body?.string() ?: return emptyList()
+        // Extract up to 5 video IDs from embedded JSON
+        return Regex(""""videoId":"([a-zA-Z0-9_-]{11})"""")
+            .findAll(html)
+            .map { it.groupValues[1] }
+            .distinct()
+            .take(5)
+            .toList()
     }
 
     private fun getAudioTrack(videoId: String): YouTubeTrack? {

@@ -32,10 +32,12 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MusicOff
+import androidx.compose.material.icons.automirrored.filled.MergeType
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -150,33 +152,74 @@ fun PlaylistDetailScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Queue controls
+            // Queue controls — 2×2 grid
             if (songs.isNotEmpty() && !inSelectionMode) {
-                Row(
+                val btnPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 4.dp, vertical = 6.dp
+                )
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            playerViewModel.addPlaylistAsBlock(songs, playlistName)
-                        },
-                        modifier = Modifier.weight(1f)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Queue Block")
+                        // Queue Block: adds playlist in order to the end
+                        OutlinedButton(
+                            onClick = { playerViewModel.queueBlock(songs, playlistName) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = btnPadding
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(18.dp))
+                                Text("Queue Block", style = MaterialTheme.typography.labelSmall,
+                                    textAlign = TextAlign.Center)
+                            }
+                        }
+                        // Queue Shuffle: adds playlist shuffled to the end
+                        OutlinedButton(
+                            onClick = { playerViewModel.queueShuffle(songs, playlistName) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = btnPadding
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Shuffle, null, Modifier.size(18.dp))
+                                Text("Queue Shuffle", style = MaterialTheme.typography.labelSmall,
+                                    textAlign = TextAlign.Center)
+                            }
+                        }
                     }
-                    OutlinedButton(
-                        onClick = {
-                            playerViewModel.addPlaylistIndividually(songs, playlistName)
-                        },
-                        modifier = Modifier.weight(1f)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(Icons.Default.Shuffle, null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Queue Mix")
+                        // Mix Block: inserts playlist in order at a random position
+                        Button(
+                            onClick = { playerViewModel.mixBlock(songs, playlistName) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = btnPadding
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.AutoMirrored.Filled.MergeType, null, Modifier.size(18.dp))
+                                Text("Mix Block", style = MaterialTheme.typography.labelSmall,
+                                    textAlign = TextAlign.Center)
+                            }
+                        }
+                        // Mix Shuffle: inserts each song at a separate random position
+                        Button(
+                            onClick = { playerViewModel.mixShuffle(songs, playlistName) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = btnPadding
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Shuffle, null, Modifier.size(18.dp))
+                                Text("Mix Shuffle", style = MaterialTheme.typography.labelSmall,
+                                    textAlign = TextAlign.Center)
+                            }
+                        }
                     }
                 }
 
@@ -237,7 +280,7 @@ fun PlaylistDetailScreen(
                                         selectedIds + song.id
                                     }
                                 } else {
-                                    playerViewModel.addToQueue(song, playlistName)
+                                    playerViewModel.tapSong(song, playlistName)
                                 }
                             },
                             onLongClick = {
