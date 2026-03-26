@@ -111,6 +111,8 @@ private val INJECT_SCRIPT = """
 @Composable
 fun SpotifyBrowserOverlay(url: String, onDone: (chunks: List<String>) -> Unit) {
     val chunks = remember { mutableListOf<String>() }
+    val seenUris = remember { mutableSetOf<String>() }
+    val trackUriRegex = remember { Regex(""""uri"\s*:\s*"(spotify:track:[a-zA-Z0-9]+)"""") }
     var extraCount by remember { mutableIntStateOf(0) }
     var pageTitle by remember { mutableStateOf("Loading…") }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -189,10 +191,12 @@ fun SpotifyBrowserOverlay(url: String, onDone: (chunks: List<String>) -> Unit) {
                                 @JavascriptInterface
                                 fun onApiChunk(json: String) {
                                     chunks.add(json)
-                                    val matches = Regex(""""name"\s*:\s*"[^"]{2,}"""").findAll(json).count()
-                                    val approx = maxOf(0, matches / 3)
-                                    if (approx > 0) {
-                                        extraCount += approx
+                                    val found = trackUriRegex.findAll(json)
+                                        .map { it.groupValues[1] }.toSet()
+                                    val newUris = found - seenUris
+                                    if (newUris.isNotEmpty()) {
+                                        seenUris.addAll(newUris)
+                                        extraCount += newUris.size
                                     }
                                 }
                             }, "SpotifyBridge")
