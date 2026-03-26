@@ -444,6 +444,8 @@ fun PlaylistDetailScreen(
                                     Icons.Default.Search to "Searching SoundCloud..."
                                 MusicRepository.DownloadStatus.SEARCHING_BANDCAMP ->
                                     Icons.Default.Search to "Searching Bandcamp..."
+                                MusicRepository.DownloadStatus.SEARCHING_YOUTUBE ->
+                                    Icons.Default.Search to "Searching YouTube..."
                                 MusicRepository.DownloadStatus.DOWNLOADING ->
                                     Icons.Default.Download to "Downloading..."
                                 MusicRepository.DownloadStatus.DONE ->

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
@@ -40,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -56,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.musicdownloader.app.AppSettings
 import com.musicdownloader.app.data.db.PlaylistEntity
 import com.musicdownloader.app.ui.viewmodel.MainViewModel
 import com.musicdownloader.app.updater.AppUpdater
@@ -78,6 +81,8 @@ fun HomeScreen(
     var updateError by remember { mutableStateOf<String?>(null) }
     var updateChecking by remember { mutableStateOf(false) }
     var updateDownloading by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var allowYoutube by remember { mutableStateOf(AppSettings.get().allowYoutube) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val appUpdater = remember { AppUpdater() }
@@ -90,6 +95,9 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
                 actions = {
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(Icons.Default.Settings, "Settings")
+                    }
                     IconButton(onClick = {
                         showUpdateDialog = true
                         updateChecking = true
@@ -231,6 +239,40 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Settings dialog
+    if (showSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = { Text("Settings") },
+            text = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Accept YouTube as fallback", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Use YouTube if a song can't be found on SoundCloud or Bandcamp",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(
+                        checked = allowYoutube,
+                        onCheckedChange = {
+                            allowYoutube = it
+                            AppSettings.get().allowYoutube = it
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSettingsDialog = false }) { Text("Done") }
             }
         )
     }

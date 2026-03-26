@@ -287,9 +287,12 @@ fun ImportScreen(
                                         Icons.Default.Search to "Searching SoundCloud..."
                                     MusicRepository.DownloadStatus.SEARCHING_BANDCAMP ->
                                         Icons.Default.Search to "Searching Bandcamp..."
+                                    MusicRepository.DownloadStatus.SEARCHING_YOUTUBE ->
+                                        Icons.Default.Search to "Searching YouTube..."
                                     MusicRepository.DownloadStatus.DOWNLOADING -> {
                                         val src = when (progress.source) {
                                             MusicRepository.TrackSource.BANDCAMP -> " from Bandcamp"
+                                            MusicRepository.TrackSource.YOUTUBE -> " from YouTube"
                                             else -> ""
                                         }
                                         Icons.Default.Download to "Downloading$src..."
@@ -328,7 +331,7 @@ fun ImportScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         importState.downloadSummary?.let { summary ->
-                            val total = summary.soundCloudCount + summary.bandcampCount
+                            val total = summary.soundCloudCount + summary.bandcampCount + summary.youTubeCount
                             Text(
                                 "$total tracks downloaded",
                                 style = MaterialTheme.typography.bodyMedium
@@ -344,6 +347,13 @@ fun ImportScreen(
                             if (summary.bandcampCount > 0) {
                                 Text(
                                     "Bandcamp: ${summary.bandcampCount}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (summary.youTubeCount > 0) {
+                                Text(
+                                    "YouTube: ${summary.youTubeCount}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
