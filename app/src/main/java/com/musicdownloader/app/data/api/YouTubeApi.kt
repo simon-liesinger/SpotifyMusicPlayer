@@ -45,13 +45,15 @@ class YouTubeApi(
             if (artistHint == null) return@withContext getAudioTrack(videoIds.first())
 
             val primaryArtist = artistHint.split(",").first().trim().lowercase()
-            // Try up to 3 results, prefer one whose title contains the expected artist
+            // Try up to 3 results, prefer one whose title contains the expected artist,
+            // but always fall back to the first fetchable result rather than returning null.
+            var firstFetched: YouTubeTrack? = null
             for (videoId in videoIds.take(3)) {
                 val track = getAudioTrack(videoId) ?: continue
+                if (firstFetched == null) firstFetched = track
                 if (track.title.lowercase().contains(primaryArtist)) return@withContext track
             }
-            // Fall back to first result if no title match
-            null
+            firstFetched
         }
 
     private fun searchVideoIds(query: String): List<String> {
