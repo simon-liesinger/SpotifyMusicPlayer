@@ -61,14 +61,12 @@ fun ImportScreen(
     val existingPlaylists by viewModel.playlists.collectAsState()
     var playlistUrl by remember { mutableStateOf("") }
     var showPlaylistPicker by remember { mutableStateOf(false) }
-    var showApiSetup by remember { mutableStateOf(false) }
-    var apiConfigured by remember { mutableStateOf(viewModel.isSpotifyApiConfigured()) }
     var showBrowser by remember { mutableStateOf(false) }
 
     if (showBrowser) {
-        SpotifyBrowserOverlay(url = playlistUrl.trim()) { chunks ->
+        SpotifyBrowserOverlay(url = playlistUrl.trim()) { chunks, playlistName ->
             showBrowser = false
-            viewModel.mergeWebViewTracks(chunks)
+            viewModel.setWebViewTracks(chunks, playlistName)
         }
         return
     }
@@ -96,7 +94,9 @@ fun ImportScreen(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                "Paste a Spotify playlist link below to import tracks.",
+                "Paste a Spotify playlist link, then tap Scan. The playlist opens in a " +
+                    "built-in browser — log in if asked and scroll to the bottom so every " +
+                    "track loads, then tap Import.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -108,30 +108,18 @@ fun ImportScreen(
                 placeholder = { Text("https://open.spotify.com/playlist/...") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                enabled = !importState.isLoading && !importState.isDownloading
+                enabled = !importState.isDownloading
             )
 
-            if (importState.tracks == null && !importState.isLoading) {
+            if (importState.tracks == null) {
                 Button(
-                    onClick = { viewModel.fetchPlaylist(playlistUrl.trim()) },
+                    onClick = { showBrowser = true },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = playlistUrl.contains("spotify.com/playlist/")
                 ) {
-                    Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Fetch Playlist")
-                }
-            }
-
-            if (importState.isLoading) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text("Fetching playlist from Spotify...")
+                    Text("Scan Playlist")
                 }
             }
 
@@ -148,28 +136,6 @@ fun ImportScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(error, color = MaterialTheme.colorScheme.onErrorContainer)
-                    }
-                }
-            }
-
-            importState.apiWarning?.let { warning ->
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-                    )
-                ) {
-                    Row(modifier = Modifier.padding(12.dp)) {
-                        Icon(
-                            Icons.Default.Error, null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            warning,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
                     }
                 }
             }
@@ -194,69 +160,15 @@ fun ImportScreen(
                         }
                     }
 
-                    // Spotify API credentials prompt
-                    if (tracks.size >= 30 && !apiConfigured) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    "This playlist may have more tracks",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    "Spotify only shows ~30 tracks without API access. " +
-                                        "If you have Spotify Premium, set up a developer app to fetch all tracks. " +
-                                        "Otherwise, use \"Add to Existing Playlist\" to append more batches.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                OutlinedButton(onClick = { showApiSetup = true }) {
-                                    Text("Set up Spotify API")
-                                }
-                            }
-                        }
-                    } else if (apiConfigured) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.CheckCircle, null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "Spotify API connected",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.weight(1f))
-                            TextButton(onClick = {
-                                viewModel.clearSpotifyApi()
-                                apiConfigured = false
-                            }) {
-                                Text("Disconnect", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-
-                    // Offer to load more tracks if count is a multiple of 30 (likely truncated)
-                    if (tracks.size % 30 == 0) {
-                        OutlinedButton(
-                            onClick = { showBrowser = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Load all tracks (${tracks.size} found so far)")
-                        }
+                    // Re-open the browser to capture any tracks that were missed
+                    // (e.g. the list wasn't scrolled all the way down).
+                    OutlinedButton(
+                        onClick = { showBrowser = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Re-scan for more tracks")
                     }
 
                     Button(
@@ -403,60 +315,6 @@ fun ImportScreen(
 
             Spacer(Modifier.height(16.dp))
         }
-    }
-
-    if (showApiSetup) {
-        var clientId by remember { mutableStateOf("") }
-        var clientSecret by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = { showApiSetup = false },
-            title = { Text("Spotify API Setup") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Requires Spotify Premium. Create a free app at developer.spotify.com and paste your credentials below.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = clientId,
-                        onValueChange = { clientId = it },
-                        label = { Text("Client ID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = clientSecret,
-                        onValueChange = { clientSecret = it },
-                        label = { Text("Client Secret") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.configureSpotifyApi(clientId, clientSecret)
-                        apiConfigured = true
-                        showApiSetup = false
-                        // Re-fetch playlist with API to get all tracks
-                        if (playlistUrl.isNotBlank()) {
-                            viewModel.fetchPlaylist(playlistUrl.trim())
-                        }
-                    },
-                    enabled = clientId.isNotBlank() && clientSecret.isNotBlank()
-                ) {
-                    Text("Save & Re-fetch")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showApiSetup = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
     }
 
     if (showPlaylistPicker) {

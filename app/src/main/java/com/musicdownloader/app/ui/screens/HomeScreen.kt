@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -61,9 +60,6 @@ import androidx.compose.ui.unit.dp
 import com.musicdownloader.app.AppSettings
 import com.musicdownloader.app.data.db.PlaylistEntity
 import com.musicdownloader.app.ui.viewmodel.MainViewModel
-import com.musicdownloader.app.updater.AppUpdater
-import com.musicdownloader.app.updater.UpdateInfo
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,16 +72,8 @@ fun HomeScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<PlaylistEntity?>(null) }
     var showDeleteDialog by remember { mutableStateOf<PlaylistEntity?>(null) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    var updateError by remember { mutableStateOf<String?>(null) }
-    var updateChecking by remember { mutableStateOf(false) }
-    var updateDownloading by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var allowYoutube by remember { mutableStateOf(AppSettings.get().allowYoutube) }
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val appUpdater = remember { AppUpdater() }
 
     Scaffold(
         topBar = {
@@ -97,22 +85,6 @@ fun HomeScreen(
                 actions = {
                     IconButton(onClick = { showSettingsDialog = true }) {
                         Icon(Icons.Default.Settings, "Settings")
-                    }
-                    IconButton(onClick = {
-                        showUpdateDialog = true
-                        updateChecking = true
-                        updateError = null
-                        updateInfo = null
-                        scope.launch {
-                            try {
-                                updateInfo = appUpdater.checkForUpdate()
-                            } catch (e: Exception) {
-                                updateError = e.message
-                            }
-                            updateChecking = false
-                        }
-                    }) {
-                        Icon(Icons.Default.SystemUpdate, "Check for updates")
                     }
                 }
             )
@@ -273,81 +245,6 @@ fun HomeScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showSettingsDialog = false }) { Text("Done") }
-            }
-        )
-    }
-
-    // Update dialog
-    if (showUpdateDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                if (!updateDownloading) {
-                    showUpdateDialog = false
-                }
-            },
-            title = { Text("App Update") },
-            text = {
-                Column {
-                    when {
-                        updateChecking -> {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Text("Checking for updates...")
-                            }
-                        }
-                        updateError != null -> {
-                            Text("Error: $updateError")
-                        }
-                        updateDownloading -> {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Text("Downloading update...")
-                            }
-                        }
-                        updateInfo != null -> {
-                            val info = updateInfo!!
-                            Text("Current version: ${info.currentVersion}")
-                            Spacer(Modifier.height(4.dp))
-                            Text("Latest version: ${info.version}")
-                            Spacer(Modifier.height(8.dp))
-                            if (info.hasUpdate) {
-                                Text(
-                                    "A new version is available!",
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            } else {
-                                Text("You're up to date.")
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                if (updateInfo?.hasUpdate == true && !updateDownloading) {
-                    Button(onClick = {
-                        updateDownloading = true
-                        scope.launch {
-                            try {
-                                appUpdater.downloadAndInstall(updateInfo!!.downloadUrl, context)
-                            } catch (e: Exception) {
-                                updateError = e.message
-                            }
-                            updateDownloading = false
-                        }
-                    }) {
-                        Text("Update")
-                    }
-                }
-            },
-            dismissButton = {
-                if (!updateDownloading) {
-                    TextButton(onClick = { showUpdateDialog = false }) {
-                        Text("Close")
-                    }
-                }
             }
         )
     }

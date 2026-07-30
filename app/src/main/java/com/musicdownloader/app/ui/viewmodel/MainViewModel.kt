@@ -183,27 +183,31 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch { repository.deleteSongs(songs) }
     }
 
-    fun isSpotifyApiConfigured(): Boolean =
-        repository.spotifyScraper.spotifyApi.isConfigured()
-
-    fun configureSpotifyApi(clientId: String, clientSecret: String) {
-        repository.spotifyScraper.spotifyApi.configure(clientId, clientSecret)
-    }
-
-    fun clearSpotifyApi() {
-        repository.spotifyScraper.spotifyApi.clearCredentials()
-    }
-
-    fun mergeWebViewTracks(chunks: List<String>) {
-        val existing = _importState.value.tracks ?: return
-        val webViewTracks = repository.spotifyScraper.parseApiChunks(chunks)
+    /**
+     * Load tracks captured by scrolling through the in-app Spotify browser.
+     * The browser intercepts Spotify's own API responses, so this returns the
+     * full playlist (no developer credentials or Premium required). Any tracks
+     * already collected are merged in and de-duplicated.
+     */
+    fun setWebViewTracks(chunks: List<String>, playlistName: String?) {
+        val scanned = repository.spotifyScraper.parseApiChunks(chunks)
+        val existing = _importState.value.tracks ?: emptyList()
         val existingKeys = existing.map { "${it.name}||${it.artist}" }.toSet()
-        val newTracks = webViewTracks.filter { "${it.name}||${it.artist}" !in existingKeys }
-        if (newTracks.isNotEmpty()) {
+        val merged = existing + scanned.filter { "${it.name}||${it.artist}" !in existingKeys }
+
+        if (merged.isEmpty()) {
             _importState.value = _importState.value.copy(
-                tracks = existing + newTracks
+                error = "No tracks were captured. Open the playlist, log in if asked, " +
+                    "and scroll to the bottom so every track loads, then tap Import."
             )
+            return
         }
+
+        _importState.value = _importState.value.copy(
+            tracks = merged,
+            playlistName = _importState.value.playlistName ?: playlistName,
+            error = null
+        )
     }
 
     fun resetImportState() {

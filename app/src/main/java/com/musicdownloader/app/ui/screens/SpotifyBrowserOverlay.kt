@@ -109,7 +109,7 @@ private val INJECT_SCRIPT = """
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun SpotifyBrowserOverlay(url: String, onDone: (chunks: List<String>) -> Unit) {
+fun SpotifyBrowserOverlay(url: String, onDone: (chunks: List<String>, playlistName: String?) -> Unit) {
     val chunks = remember { mutableListOf<String>() }
     val seenUris = remember { mutableSetOf<String>() }
     val trackUriRegex = remember { Regex(""""uri"\s*:\s*"(spotify:track:[a-zA-Z0-9]+)"""") }
@@ -117,7 +117,15 @@ fun SpotifyBrowserOverlay(url: String, onDone: (chunks: List<String>) -> Unit) {
     var pageTitle by remember { mutableStateOf("Loading…") }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
-    BackHandler { onDone(chunks.toList()) }
+    fun cleanPlaylistName(title: String): String? {
+        // Spotify tab titles look like "Playlist Name - playlist by X | Spotify"
+        val name = title.substringBefore(" - playlist by")
+            .substringBefore(" | Spotify")
+            .trim()
+        return name.takeIf { it.isNotBlank() && !it.equals("Spotify", ignoreCase = true) }
+    }
+
+    BackHandler { onDone(chunks.toList(), cleanPlaylistName(pageTitle)) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -218,13 +226,13 @@ fun SpotifyBrowserOverlay(url: String, onDone: (chunks: List<String>) -> Unit) {
             }
 
             Button(
-                onClick = { onDone(chunks.toList()) },
+                onClick = { onDone(chunks.toList(), cleanPlaylistName(pageTitle)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp),
                 shape = MaterialTheme.shapes.medium
             ) {
-                Text("Import ${if (extraCount > 0) "(+$extraCount tracks)" else "tracks"}")
+                Text(if (extraCount > 0) "Import $extraCount tracks" else "Import tracks")
             }
         }
     }
