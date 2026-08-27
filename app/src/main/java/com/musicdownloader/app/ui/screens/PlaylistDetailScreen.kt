@@ -534,7 +534,8 @@ fun PlaylistDetailScreen(
                             )
                         ) {
                             Text(
-                                "Song added to playlist!",
+                                addSongState.addedFrom?.let { "Song added from ${sourceLabel(it)}!" }
+                                    ?: "Song added to playlist!",
                                 modifier = Modifier.padding(12.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
@@ -642,4 +643,10 @@ private fun SongListItem(
             }
         }
     }
+}
+
+private fun sourceLabel(source: MusicRepository.TrackSource): String = when (source) {
+    MusicRepository.TrackSource.SOUNDCLOUD -> "SoundCloud"
+    MusicRepository.TrackSource.BANDCAMP -> "Bandcamp"
+    MusicRepository.TrackSource.YOUTUBE -> "YouTube"
 }

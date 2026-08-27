@@ -1,5 +1,6 @@
 package com.musicdownloader.app.data.api
 
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,8 @@ data class SoundCloudStreamInfo(val url: String?)
 
 /** A resolved, downloadable stream. HLS streams are m3u8 playlists of MP3 segments. */
 data class SoundCloudStream(val url: String, val isHls: Boolean)
+
+private const val TAG = "SoundCloudApi"
 
 class SoundCloudApi(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -179,6 +182,13 @@ class SoundCloudApi(
 
             val accepted = playable.filter {
                 TrackMatch.matches(it.title, it.user.username, it.duration, query)
+            }
+            Log.d(TAG, "search ${query.rawQuery} -> ${tracks.size} hits, " +
+                "${playable.size} playable, ${accepted.size} matched")
+            if (accepted.isEmpty()) {
+                playable.take(5).forEach {
+                    Log.d(TAG, "  rejected: ${it.title} / ${it.user.username} (${it.duration}ms)")
+                }
             }
 
             val artistHint = query.artist ?: return@withContext accepted

@@ -250,21 +250,36 @@ fun ImportScreen(
             }
 
             if (importState.completed) {
+                // "Complete" must not read as "everything worked" — a run where every
+                // track failed still reaches this point, and the heading is the only
+                // part most people read.
+                val summary = importState.downloadSummary
+                val got = summary?.let {
+                    it.soundCloudCount + it.bandcampCount + it.youTubeCount
+                } ?: 0
+                val missed = summary?.notFoundCount ?: 0
+                val allFailed = summary != null && got == 0 && missed > 0
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = if (allFailed) MaterialTheme.colorScheme.errorContainer
+                                         else MaterialTheme.colorScheme.primaryContainer
                     )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            "Download Complete!",
+                            when {
+                                allFailed -> "No tracks could be downloaded"
+                                missed > 0 -> "Downloaded $got of ${got + missed} tracks"
+                                else -> "Download Complete!"
+                            },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = if (allFailed) MaterialTheme.colorScheme.onErrorContainer
+                                    else MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.height(4.dp))
-                        importState.downloadSummary?.let { summary ->
-                            val total = summary.soundCloudCount + summary.bandcampCount + summary.youTubeCount
+                        summary?.let { summary ->
+                            val total = got
                             Text(
                                 "$total tracks downloaded",
                                 style = MaterialTheme.typography.bodyMedium

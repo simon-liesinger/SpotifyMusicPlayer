@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.musicdownloader.app.AppSettings
 import com.musicdownloader.app.data.api.TrackInfo
 import com.musicdownloader.app.data.db.PlaylistEntity
 import com.musicdownloader.app.data.db.PlaylistWithSongs
@@ -33,7 +34,9 @@ data class AddSongState(
     val isLoading: Boolean = false,
     val progress: MusicRepository.DownloadProgress? = null,
     val error: String? = null,
-    val completed: Boolean = false
+    val completed: Boolean = false,
+    /** Which source the song actually came from; null unless [completed]. */
+    val addedFrom: MusicRepository.TrackSource? = null
 )
 
 class MainViewModel : ViewModel() {
@@ -130,10 +133,30 @@ class MainViewModel : ViewModel() {
                     input.trim()
                 }
 
-                repository.downloadSingleTrack(playlistId, searchQuery, searchQuery) { progress ->
+                val source = repository.downloadSingleTrack(playlistId, searchQuery, searchQuery) { progress ->
                     _addSongState.value = _addSongState.value.copy(progress = progress)
                 }
-                _addSongState.value = AddSongState(completed = true)
+                // No source finding the track is a normal outcome, not an exception,
+                // so success has to be read off the return value. Reporting it as
+                // added regardless is worse than failing: the song silently isn't
+                // in the playlist.
+                _addSongState.value = if (source != null) {
+                    _addSongState.value.copy(isLoading = false, completed = true, addedFrom = source)
+                } else {
+                    // Name only the sources that were actually tried — claiming YouTube
+                    // was searched when it's switched off sends people looking for the
+                    // wrong problem.
+                    val searched = if (AppSettings.get().allowYoutube) {
+                        "SoundCloud, Bandcamp or YouTube"
+                    } else {
+                        "SoundCloud or Bandcamp (YouTube is off in Settings)"
+                    }
+                    _addSongState.value.copy(
+                        isLoading = false,
+                        error = "Couldn't find \"$searchQuery\" on $searched. " +
+                            "Nothing was added to the playlist."
+                    )
+                }
             } catch (e: Exception) {
                 _addSongState.value = AddSongState(
                     error = e.message ?: "Failed to add song"
