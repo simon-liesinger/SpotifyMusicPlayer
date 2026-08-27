@@ -32,12 +32,15 @@ class BandcampApi(
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     /**
-     * Search Bandcamp for a track and return its info if found.
-     * If artistHint is provided, prefer results whose artist field matches the expected artist.
+     * Search Bandcamp for the requested recording, or null if it isn't there.
+     *
+     * Bandcamp is heavy on covers, tribute albums and live sets, so results are
+     * filtered through [TrackMatch] — a result that isn't the same recording is
+     * skipped rather than returned as a stand-in.
      */
-    suspend fun searchTrack(query: String, artistHint: String? = null): BandcampTrack? {
+    suspend fun searchTrack(query: TrackQuery): BandcampTrack? {
         return withContext(Dispatchers.IO) {
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val encodedQuery = URLEncoder.encode(query.rawQuery, "UTF-8")
             val searchUrl = "https://bandcamp.com/search?q=$encodedQuery&item_type=t"
 
             val request = Request.Builder()
@@ -61,25 +64,17 @@ class BandcampApi(
             }
 
             if (trackUrls.isEmpty()) return@withContext null
-            if (artistHint == null) return@withContext extractTrackData(trackUrls.first())
 
-            // Try each result and prefer the one with matching artist
+            // Return the first result that is actually the requested recording.
+            // No blind fallback: a non-matching result is a different song.
             for (url in trackUrls) {
                 val track = extractTrackData(url) ?: continue
-                if (artistMatches(track.artist, artistHint)) return@withContext track
+                if (TrackMatch.matches(track.title, track.artist, track.durationMs, query)) {
+                    return@withContext track
+                }
             }
-            // Fall back to first fetchable result
-            trackUrls.firstNotNullOfOrNull { extractTrackData(it) }
+            null
         }
-    }
-
-    private fun artistMatches(trackArtist: String, hint: String): Boolean {
-        fun normalize(s: String) = s.lowercase().replace(Regex("[^a-z0-9 ]"), "").trim()
-        val a = normalize(trackArtist)
-        val h = normalize(hint.split(",").first())
-        if (a.isEmpty() || h.isEmpty()) return false
-        return a.contains(h) || h.contains(a) ||
-            h.split(" ").filter { it.length > 2 }.any { w -> a.split(" ").any { it.startsWith(w) } }
     }
 
     private fun extractTrackData(trackUrl: String): BandcampTrack? {

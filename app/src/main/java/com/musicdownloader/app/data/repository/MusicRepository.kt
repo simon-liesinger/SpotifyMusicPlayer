@@ -8,9 +8,11 @@ import com.musicdownloader.app.AppSettings
 import com.musicdownloader.app.MusicApp
 import com.musicdownloader.app.data.api.AudioAnalyzer
 import com.musicdownloader.app.data.api.BandcampApi
+import com.musicdownloader.app.data.api.MetadataLookup
 import com.musicdownloader.app.data.api.SoundCloudApi
 import com.musicdownloader.app.data.api.SpotifyScraper
 import com.musicdownloader.app.data.api.TrackInfo
+import com.musicdownloader.app.data.api.TrackQuery
 import com.musicdownloader.app.data.api.YouTubeApi
 import com.musicdownloader.app.data.db.PlaylistEntity
 import com.musicdownloader.app.data.db.PlaylistWithSongs
@@ -35,9 +37,11 @@ class MusicRepository {
     private val soundCloudApi = SoundCloudApi()
     private val bandcampApi = BandcampApi()
     private val youTubeApi = YouTubeApi()
+    private val metadataLookup = MetadataLookup()
 
     companion object {
         private const val MIN_DURATION_MS = 31_000L // reject free-sample previews (~30 s)
+        private const val MAX_SOUNDCLOUD_CANDIDATES = 3
     }
 
     /** Returns false if the file is too short to be a real song (likely a preview sample). */
@@ -88,6 +92,39 @@ class MusicRepository {
 
     suspend fun fetchSpotifyPlaylist(playlistUrl: String): Pair<String, List<TrackInfo>> {
         return spotifyScraper.getPlaylistTracks(playlistUrl)
+    }
+
+    /**
+     * Try SoundCloud candidates in order until one actually downloads to a usable file.
+     *
+     * A single search hit is not enough: the top result is often geo-blocked, snipped
+     * to a 30 s preview, or has a dead transcoding that 404s on the stream endpoint.
+     * Returns the track that was written to [outputFile], or null if none worked —
+     * never throws, so the caller can fall through to Bandcamp/YouTube.
+     */
+    private suspend fun downloadFromSoundCloud(
+        query: TrackQuery,
+        outputFile: File,
+        onDownloadStart: () -> Unit
+    ): com.musicdownloader.app.data.api.SoundCloudTrack? = withContext(Dispatchers.IO) {
+        val candidates = try {
+            soundCloudApi.searchTracks(query)
+        } catch (_: Exception) {
+            return@withContext null
+        }
+
+        for (candidate in candidates.take(MAX_SOUNDCLOUD_CANDIDATES)) {
+            try {
+                val stream = soundCloudApi.resolveStream(candidate) ?: continue
+                onDownloadStart()
+                soundCloudApi.downloadToFile(stream, outputFile)
+                if (isNotSample(outputFile)) return@withContext candidate
+                outputFile.delete()
+            } catch (_: Exception) {
+                outputFile.delete()
+            }
+        }
+        null
     }
 
     enum class TrackSource { SOUNDCLOUD, BANDCAMP, YOUTUBE }
@@ -150,36 +187,42 @@ class MusicRepository {
         musicDir.mkdirs()
         val startIndex = songDao.countForPlaylist(playlistId)
 
-        withContext(Dispatchers.IO) { soundCloudApi.resolveClientId() }
+        withContext(Dispatchers.IO) {
+            try { soundCloudApi.resolveClientId() } catch (_: Exception) {}
+        }
 
         val safeFilename = displayName.replace(Regex("[^a-zA-Z0-9 \\-_]"), "").trim().take(100)
         val allowYoutube = AppSettings.get().allowYoutube
         var saved = false
 
+        // Resolve what the user typed to a canonical title/artist/duration so the
+        // sources can be held to the same standard as a Spotify playlist import.
+        // Covers are usually uploaded under the bare song title with no giveaway
+        // word, so duration is the only thing that separates them from the original.
+        val query = metadataLookup.resolve(searchQuery)
+
         // ── SoundCloud ──────────────────────────────────────────────────────
         onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.SEARCHING))
-        val scTrack = soundCloudApi.searchTrack(searchQuery)
-        if (scTrack != null) {
+        val scOutputFile = File(musicDir, "$safeFilename.mp3")
+        val scTrack = downloadFromSoundCloud(query, scOutputFile) {
             onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.DOWNLOADING, TrackSource.SOUNDCLOUD))
-            val outputFile = File(musicDir, "$safeFilename.mp3")
-            soundCloudApi.downloadToFile(soundCloudApi.getStreamUrl(scTrack), outputFile)
-            if (isNotSample(outputFile)) {
-                val id = songDao.insert(SongEntity(playlistId = playlistId, title = scTrack.title,
-                    artist = scTrack.user.username, filePath = outputFile.absolutePath,
-                    duration = scTrack.duration, artworkUrl = scTrack.artworkUrl, orderIndex = startIndex))
-                scheduleAnalysis(id, outputFile)
-                onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.DONE, TrackSource.SOUNDCLOUD))
-                saved = true
-            } else {
-                outputFile.delete()
-            }
+        }
+        if (scTrack != null) {
+            val id = songDao.insert(SongEntity(playlistId = playlistId, title = scTrack.title,
+                artist = scTrack.user.username, filePath = scOutputFile.absolutePath,
+                duration = scTrack.duration, artworkUrl = scTrack.artworkUrl, orderIndex = startIndex))
+            scheduleAnalysis(id, scOutputFile)
+            onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.DONE, TrackSource.SOUNDCLOUD))
+            saved = true
         }
 
         // ── Bandcamp ────────────────────────────────────────────────────────
         if (!saved) {
             onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.SEARCHING_BANDCAMP))
-            val bcTrack = withContext(Dispatchers.IO) { bandcampApi.searchTrack(searchQuery) }
-            if (bcTrack != null) {
+            val bcTrack = withContext(Dispatchers.IO) {
+                try { bandcampApi.searchTrack(query) } catch (_: Exception) { null }
+            }
+            if (bcTrack != null) try {
                 onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.DOWNLOADING, TrackSource.BANDCAMP))
                 val outputFile = File(musicDir, "$safeFilename.mp3")
                 bandcampApi.downloadToFile(bcTrack.streamUrl, outputFile)
@@ -193,14 +236,18 @@ class MusicRepository {
                 } else {
                     outputFile.delete()
                 }
+            } catch (_: Exception) {
+                // fall through to YouTube
             }
         }
 
         // ── YouTube (optional fallback) ─────────────────────────────────────
         if (!saved && allowYoutube) {
             onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.SEARCHING_YOUTUBE))
-            val ytTrack = withContext(Dispatchers.IO) { youTubeApi.searchAndGetTrack(searchQuery) }
-            if (ytTrack != null) {
+            val ytTrack = withContext(Dispatchers.IO) {
+                try { youTubeApi.searchAndGetTrack(query) } catch (_: Exception) { null }
+            }
+            if (ytTrack != null) try {
                 onProgress(DownloadProgress(1, 1, displayName, DownloadStatus.DOWNLOADING, TrackSource.YOUTUBE))
                 val outputFile = File(musicDir, "$safeFilename.m4a")
                 youTubeApi.downloadToFile(ytTrack.audioUrl, outputFile)
@@ -214,6 +261,8 @@ class MusicRepository {
                 } else {
                     outputFile.delete()
                 }
+            } catch (_: Exception) {
+                // nothing left to try
             }
         }
 
@@ -442,8 +491,9 @@ class MusicRepository {
 
         val startIndex = songDao.countForPlaylist(playlistId)
 
+        // Warm the client_id cache. If it fails, keep going — Bandcamp/YouTube still work.
         withContext(Dispatchers.IO) {
-            soundCloudApi.resolveClientId()
+            try { soundCloudApi.resolveClientId() } catch (_: Exception) {}
         }
 
         var scCount = 0
@@ -458,16 +508,25 @@ class MusicRepository {
         for ((index, track) in tracks.withIndex()) {
             val trackNum = index + 1
             var saved = false
+            // Spotify's title/artist/duration are trusted, so every source can check
+            // that what it found is the same recording.
+            val query = TrackQuery(
+                rawQuery = track.searchQuery,
+                title = track.name,
+                artist = track.artist,
+                durationMs = track.durationMs
+            )
 
             try {
                 // ── SoundCloud ──────────────────────────────────────────────
-                onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.SEARCHING))
-                val scTrack = soundCloudApi.searchTrack(track.searchQuery, track.artist)
-                if (scTrack != null) {
-                    onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DOWNLOADING, TrackSource.SOUNDCLOUD))
+                // Isolated: a SoundCloud failure must not skip the other sources.
+                try {
+                    onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.SEARCHING))
                     val outputFile = File(musicDir, "${safeBase(track.name, track.artist)}.mp3")
-                    soundCloudApi.downloadToFile(soundCloudApi.getStreamUrl(scTrack), outputFile)
-                    if (isNotSample(outputFile)) {
+                    val scTrack = downloadFromSoundCloud(query, outputFile) {
+                        onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DOWNLOADING, TrackSource.SOUNDCLOUD))
+                    }
+                    if (scTrack != null) {
                         val id = songDao.insert(SongEntity(playlistId = playlistId, title = track.name,
                             artist = track.artist, filePath = outputFile.absolutePath,
                             duration = track.durationMs, artworkUrl = track.artworkUrl,
@@ -476,16 +535,18 @@ class MusicRepository {
                         scCount++
                         onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DONE, TrackSource.SOUNDCLOUD))
                         saved = true
-                    } else {
-                        outputFile.delete()
                     }
+                } catch (_: Exception) {
+                    // fall through to Bandcamp
                 }
 
                 // ── Bandcamp ────────────────────────────────────────────────
                 if (!saved) {
                     onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.SEARCHING_BANDCAMP))
-                    val bcTrack = withContext(Dispatchers.IO) { bandcampApi.searchTrack(track.searchQuery, track.artist) }
-                    if (bcTrack != null) {
+                    val bcTrack = withContext(Dispatchers.IO) {
+                        try { bandcampApi.searchTrack(query) } catch (_: Exception) { null }
+                    }
+                    if (bcTrack != null) try {
                         onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DOWNLOADING, TrackSource.BANDCAMP))
                         val outputFile = File(musicDir, "${safeBase(track.name, track.artist)}.mp3")
                         bandcampApi.downloadToFile(bcTrack.streamUrl, outputFile)
@@ -501,13 +562,17 @@ class MusicRepository {
                         } else {
                             outputFile.delete()
                         }
+                    } catch (_: Exception) {
+                        // fall through to YouTube
                     }
                 }
 
                 // ── YouTube (optional fallback) ─────────────────────────────
                 if (!saved && allowYoutube) {
                     onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.SEARCHING_YOUTUBE))
-                    val ytTrack = withContext(Dispatchers.IO) { youTubeApi.searchAndGetTrack(track.searchQuery, track.artist) }
+                    val ytTrack = withContext(Dispatchers.IO) {
+                        try { youTubeApi.searchAndGetTrack(query) } catch (_: Exception) { null }
+                    }
                     if (ytTrack != null) {
                         onProgress(DownloadProgress(trackNum, tracks.size, track.name, DownloadStatus.DOWNLOADING, TrackSource.YOUTUBE))
                         val outputFile = File(musicDir, "${safeBase(track.name, track.artist)}.m4a")

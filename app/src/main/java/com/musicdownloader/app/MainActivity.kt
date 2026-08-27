@@ -14,10 +14,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.musicdownloader.app.ui.navigation.AppNavGraph
 import com.musicdownloader.app.ui.theme.SpotifyMusicPlayerTheme
+import org.woheller69.freeDroidWarn.FreeDroidWarn
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        FreeDroidWarn.showWarningOnUpgrade(this, BuildConfig.VERSION_CODE)
         enableEdgeToEdge()
         requestBatteryOptimizationExemption()
         setContent {

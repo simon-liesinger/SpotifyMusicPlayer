@@ -34,26 +34,27 @@ class YouTubeApi(
         "com.google.android.apps.youtube.music/5.28.1 (Linux; U; Android 11) gzip"
 
     /**
-     * Search YouTube and return a track with a direct audio stream URL, or null.
-     * If artistHint is provided, prefer results whose title contains the expected artist name.
+     * Search YouTube and return the requested recording with a direct audio stream
+     * URL, or null if it isn't among the results.
+     *
+     * YouTube search is dominated by covers, live takes, lyric videos, 8D edits and
+     * sped-up versions, so results are filtered through [TrackMatch]. Returning
+     * nothing is better than silently handing back someone else's performance.
      */
-    suspend fun searchAndGetTrack(query: String, artistHint: String? = null): YouTubeTrack? =
+    suspend fun searchAndGetTrack(query: TrackQuery): YouTubeTrack? =
         withContext(Dispatchers.IO) {
-            val videoIds = searchVideoIds(query)
+            val videoIds = searchVideoIds(query.rawQuery)
             if (videoIds.isEmpty()) return@withContext null
 
-            if (artistHint == null) return@withContext getAudioTrack(videoIds.first())
-
-            val primaryArtist = artistHint.split(",").first().trim().lowercase()
-            // Try up to 3 results, prefer one whose title contains the expected artist,
-            // but always fall back to the first fetchable result rather than returning null.
-            var firstFetched: YouTubeTrack? = null
-            for (videoId in videoIds.take(3)) {
+            for (videoId in videoIds.take(5)) {
                 val track = getAudioTrack(videoId) ?: continue
-                if (firstFetched == null) firstFetched = track
-                if (track.title.lowercase().contains(primaryArtist)) return@withContext track
+                // The uploader channel isn't a reliable artist field here, so match on
+                // the video title alone.
+                if (TrackMatch.matches(track.title, null, track.durationMs, query)) {
+                    return@withContext track
+                }
             }
-            firstFetched
+            null
         }
 
     private fun searchVideoIds(query: String): List<String> {
